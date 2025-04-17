@@ -1,0 +1,4 @@
+#Ignore the build and exe files
+/build
+/dist
+*.exe
