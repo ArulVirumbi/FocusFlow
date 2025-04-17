@@ -40,7 +40,7 @@ pip install pystray win10toast pyinstaller Pillow
 Clone the repository to your local machine:
 
 ```bash
-git clone https://github.com/your-username/FocusFlow.git
+git clone https://github.com/ArulVirumbi/FocusFlow.git
 ```
 
 ### 2. Modify `config.json`
