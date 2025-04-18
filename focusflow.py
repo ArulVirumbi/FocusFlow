@@ -6,9 +6,8 @@ from win10toast import ToastNotifier
 import pystray
 from pystray import MenuItem as item
 from PIL import Image
-# import ctypes
+import ctypes
 import sys
-import os
 import tkinter as tk
 
 # Suppress specific TypeError from WNDPROC
@@ -20,7 +19,6 @@ def _suppress_wndproc_errors(exc_type, exc_value, exc_traceback):
     _original_excepthook(exc_type, exc_value, exc_traceback)
 
 sys.excepthook = _suppress_wndproc_errors
-sys.stderr = open(os.devnull, 'w')  # Suppress WNDPROC error output
 
 # Load config
 with open('config.json', 'r') as f:
@@ -34,54 +32,44 @@ TIME_BLOCKS = [(block['start'], block['end']) for block in config.get('time_bloc
 notifier = ToastNotifier()
 running = True
 
-MB_ICONINFORMATION = 0x40
-MB_OK = 0x0
+# Win32 MessageBoxTimeout fallback
+MB_OK = 0x00000000
+MSGBUTTON = MB_OK
+MSGTIMEOUT = 5000  # milliseconds
 
+def show_win_msgbox(title, message):
+    try:
+        ctypes.windll.user32.MessageBoxTimeoutW(0, message, title, MSGBUTTON, 0, MSGTIMEOUT)
+    except Exception:
+        pass
 
-# def show_popup(title, message, timeout=5):
-#     # Timeout in milliseconds
-#     ctypes.windll.user32.MessageBoxTimeoutW(
-#         0,
-#         message,
-#         title,
-#         MB_ICONINFORMATION,
-#         0,
-#         timeout * 1000
-#     )
+def show_popup(title, message):
+    def close():
+        popup.destroy()
 
+    popup = tk.Tk()
+    popup.overrideredirect(True)
+    popup.attributes("-topmost", True)
+    popup.configure(bg="white")
 
-def show_popup(title, message, timeout=5000):
-    def close_popup():
-        root.destroy()
+    screen_width = popup.winfo_screenwidth()
+    screen_height = popup.winfo_screenheight()
+    width, height = 300, 150
+    x = screen_width - width - 20
+    y = screen_height - height - 100
+    popup.geometry(f"{width}x{height}+{x}+{y}")
 
-    root = tk.Tk()
-    root.title(title)
-    root.attributes('-topmost', True)
-    root.geometry("300x150")  # Box size
-
-    # Remove default decorations
-    root.overrideredirect(True)
-
-    # Add padding and styling
-    frame = tk.Frame(root, bg="#f0f0f0", padx=20, pady=20)
+    frame = tk.Frame(popup, bg="white", padx=20, pady=20)
     frame.pack(expand=True, fill='both')
 
-    label = tk.Label(
-        frame, text=message, font=("Segoe UI", 20), wraplength=260, justify="center", bg="#f0f0f0"
-    )
-    label.pack(expand=True)
+    label_title = tk.Label(frame, text=title, font=("Segoe UI", 20, "bold"), bg="white")
+    label_title.pack(pady=(0, 10))
 
-    # Position window near bottom right
-    screen_width = root.winfo_screenwidth()
-    screen_height = root.winfo_screenheight()
-    x = screen_width - 320
-    y = screen_height - 180
-    root.geometry(f"300x150+{x}+{y}")
+    label_msg = tk.Label(frame, text=message, font=("Segoe UI", 18), bg="white", wraplength=260, justify="center")
+    label_msg.pack()
 
-    root.after(timeout, close_popup)
-    root.mainloop()
-
-
+    popup.after(MSGTIMEOUT, close)
+    popup.mainloop()
 
 def in_time_block():
     now = datetime.now().time()
@@ -92,27 +80,22 @@ def in_time_block():
             return True
     return False
 
-
-# def notify(title, msg):    #Variation: for using with ctypes
-#     notifier.show_toast(title, msg, duration=5, threaded=True)
-#     show_popup(title, msg, timeout=5)
-
 def notify(title, msg):
-    notifier.show_toast(title, msg, duration=5, threaded=True)
-    threading.Thread(target=show_popup, args=(title, msg), daemon=True).start()
-
+    current_time = datetime.now().strftime('%I:%M %p')
+    full_msg = f"{msg}\n{current_time}"
+    notifier.show_toast(title, full_msg, duration=5, threaded=True)
+    threading.Thread(target=show_popup, args=(title, full_msg), daemon=True).start()
 
 def countdown(seconds):
     start = time.time()
     while running and time.time() - start < seconds:
         time.sleep(1)
 
-
 def timer_loop():
     global running
     while running:
         if in_time_block():
-            notify("🧠 Work Time Started", "Focus now!")
+            notify("🧠 Work Time", "Focus now!")
             countdown(WORK_DURATION)
             if not running:
                 break
@@ -121,13 +104,10 @@ def timer_loop():
         else:
             time.sleep(30)
 
-
 def quit_app(icon, item):
     global running
     running = False
     icon.stop()
-    return 0  # ensure valid WNDPROC return
-
 
 def setup_tray():
     icon = pystray.Icon("FocusFlow")
@@ -142,9 +122,9 @@ def setup_tray():
         else:
             raise
 
-
 if __name__ == '__main__':
     threading.Thread(target=setup_tray, daemon=True).start()
+    # Keep main thread alive
     try:
         while running:
             time.sleep(1)
